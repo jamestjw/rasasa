@@ -1,0 +1,38 @@
+[project]
+name = "rasasa"
+version = "0.1.0"
+description = "Analyze Lichess bullet game accuracy vs time pressure."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "python-chess",
+  "zstandard",
+]
+
+[tool.uv]
+dev-dependencies = [
+  "black",
+  "pyright",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+exclude = "/(\\.uv-cache|\\.venv|data)/"
+
+[tool.isort]
+profile = "black"
+skip = [".uv-cache", ".venv", "data"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,15 @@
+[analysis]
+# Logistic conversion factor for win-probability mapping.
+wp_k = 1.2
+
+[engine]
+name = "stockfish"
+depth = 16
+threads = 2
+hash_mb = 256
+
+[dumps]
+base_url = "https://database.lichess.org"
+variant = "standard"
+rated = true
+speed = "bullet"
