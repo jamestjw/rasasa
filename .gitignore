@@ -2,3 +2,4 @@
 .uv-cache
 .venv
 data/
+tools/

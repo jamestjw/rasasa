@@ -4,6 +4,8 @@ wp_k = 1.2
 
 [engine]
 name = "stockfish"
+# required; set to the engine version string used for analysis
+version = "17.1"
 depth = 16
 threads = 2
 hash_mb = 256

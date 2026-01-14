@@ -14,6 +14,8 @@ Download bullet games from Lichess and analyze how move accuracy changes as time
 - Fix all type errors reported by `pyright`.
 - Run `pyright` after every change and address any issues.
 - Run `isort` and then `black` after every change.
+- Do not use `typing.cast`.
+- Prefer idempotent processing; if outputs already exist for the same inputs/config, skip reprocessing.
 
 ## Data Source
 - Lichess monthly database dumps (rate limits and ToS must be respected).
