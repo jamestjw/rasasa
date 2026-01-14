@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from rasasa.config import EngineConfig, load_engine_config
 from rasasa.dumps import (
@@ -15,7 +15,7 @@ from rasasa.dumps import (
     download_dump,
 )
 from rasasa.engines import install_stockfish, resolve_engine_path
-from rasasa.evaluation import EvaluationStats, evaluate_games
+from rasasa.evaluation import EvaluationStats, evaluate_games, evaluate_games_parallel
 from rasasa.pgn import FilterStats, Speed, filter_games_with_clocks
 
 
@@ -147,6 +147,69 @@ def _required_int(args: argparse.Namespace, name: str) -> int:
     raise ValueError(f"Missing required argument: {name}")
 
 
+def _optional_int_from_obj(value: object) -> Optional[int]:
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _optional_str_from_obj(value: object) -> Optional[str]:
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _load_json_dict(path: Path) -> Optional[dict[str, object]]:
+    try:
+        payload_any: Any = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return _as_dict(payload_any)
+
+
+def _as_dict(value: Any) -> Optional[dict[str, object]]:
+    value_any: Any = value
+    if not hasattr(value_any, "items"):
+        return None
+    items_any: Any = value_any.items()
+    payload: dict[str, object] = {}
+    for key, item in items_any:
+        if not isinstance(key, str):
+            return None
+        payload[key] = item
+    return payload
+
+
+def _meta_matches_evaluation(
+    meta: dict[str, object],
+    input_path: Path,
+    output_path: Path,
+    max_games: Optional[int],
+    engine: EngineConfig,
+) -> bool:
+    if _optional_str_from_obj(meta.get("input_path")) != str(input_path):
+        return False
+    if _optional_str_from_obj(meta.get("output_path")) != str(output_path):
+        return False
+    if _optional_int_from_obj(meta.get("max_games")) != max_games:
+        return False
+    engine_meta = _as_dict(meta.get("engine"))
+    if engine_meta is None:
+        return False
+    engine_name = _optional_str_from_obj(engine_meta.get("name"))
+    engine_version = _optional_str_from_obj(engine_meta.get("version"))
+    engine_depth = _optional_int_from_obj(engine_meta.get("depth"))
+    engine_threads = _optional_int_from_obj(engine_meta.get("threads"))
+    engine_hash = _optional_int_from_obj(engine_meta.get("hash_mb"))
+    return (
+        engine_name == engine.name
+        and engine_version == engine.version
+        and engine_depth == engine.depth
+        and engine_threads == engine.threads
+        and engine_hash == engine.hash_mb
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="rasasa utilities")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -183,6 +246,7 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--depth", type=int)
     evaluate.add_argument("--threads", type=int)
     evaluate.add_argument("--hash-mb", dest="hash_mb", type=int)
+    evaluate.add_argument("--workers", type=int, default=1)
     evaluate.add_argument("--config", default="config.toml")
 
     engine = subparsers.add_parser("engine", help="Manage chess engines")
@@ -284,6 +348,7 @@ def main() -> int:
         depth_override = _optional_int(getattr(args, "depth", None))
         threads_override = _optional_int(getattr(args, "threads", None))
         hash_override = _optional_int(getattr(args, "hash_mb", None))
+        workers = _optional_int(getattr(args, "workers", None)) or 1
         config_path = _optional_str(getattr(args, "config", None)) or "config.toml"
         output_path = (
             Path(output_raw)
@@ -304,20 +369,50 @@ def main() -> int:
         )
         meta_path = output_path.with_suffix(output_path.suffix + ".meta.json")
         if output_path.exists() and meta_path.exists():
-            print(f"Skipped evaluation; using existing {output_path}")
-            print(f"Metadata: {meta_path}")
-            return 0
+            meta = _load_json_dict(meta_path)
+            if meta and _meta_matches_evaluation(
+                meta=meta,
+                input_path=input_path,
+                output_path=output_path,
+                max_games=max_games,
+                engine=engine,
+            ):
+                print(f"Skipped evaluation; using existing {output_path}")
+                print(f"Metadata: {meta_path}")
+                return 0
         engine_path = resolve_engine_path(engine, Path("tools"))
-        result = evaluate_games(
-            input_path=input_path,
-            output_path=output_path,
-            max_games=max_games,
-            engine_path=engine_path,
-            engine_version=engine.version,
-            depth=engine.depth,
-            threads=engine.threads,
-            hash_mb=engine.hash_mb,
-        )
+        if workers > 1:
+            shard_dir = (
+                Path("data")
+                / "processed"
+                / "shards"
+                / input_path.stem
+                / f"workers-{workers}"
+                / (f"max-{max_games}" if max_games is not None else "all")
+            )
+            result = evaluate_games_parallel(
+                input_path=input_path,
+                output_path=output_path,
+                max_games=max_games,
+                engine_path=engine_path,
+                engine_version=engine.version,
+                depth=engine.depth,
+                threads=engine.threads,
+                hash_mb=engine.hash_mb,
+                workers=workers,
+                shard_dir=shard_dir,
+            )
+        else:
+            result = evaluate_games(
+                input_path=input_path,
+                output_path=output_path,
+                max_games=max_games,
+                engine_path=engine_path,
+                engine_version=engine.version,
+                depth=engine.depth,
+                threads=engine.threads,
+                hash_mb=engine.hash_mb,
+            )
         _write_evaluation_metadata(
             meta_path=meta_path,
             input_path=input_path,
