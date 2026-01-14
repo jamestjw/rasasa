@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,8 @@ from rasasa.dumps import (
 from rasasa.engines import install_stockfish, resolve_engine_path
 from rasasa.evaluation import EvaluationStats, evaluate_games, evaluate_games_parallel
 from rasasa.pgn import FilterStats, Speed, filter_games_with_clocks
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _write_metadata(
@@ -260,6 +263,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     parser = _build_parser()
     args = parser.parse_args()
 
@@ -300,13 +306,13 @@ def main() -> int:
         manifest_path = output.with_suffix(output.suffix + ".manifest.json")
         _write_manifest(manifest_path, output, url, result)
         if result.skipped:
-            print(
+            LOGGER.info(
                 f"Skipped download; using existing {output} ({result.existing_bytes} bytes)"
             )
         else:
-            print(f"Wrote {output} ({result.bytes_written} bytes)")
-        print(f"Metadata: {meta_path}")
-        print(f"Manifest: {manifest_path}")
+            LOGGER.info(f"Wrote {output} ({result.bytes_written} bytes)")
+        LOGGER.info("Metadata: %s", meta_path)
+        LOGGER.info("Manifest: %s", manifest_path)
         return 0
 
     if args.command == "extract":
@@ -335,8 +341,8 @@ def main() -> int:
             stats=stats,
             speed=parsed_speed.value,
         )
-        print(f"Wrote {output_path} ({stats.kept_games} games kept)")
-        print(f"Metadata: {meta_path}")
+        LOGGER.info("Wrote %s (%s games kept)", output_path, stats.kept_games)
+        LOGGER.info("Metadata: %s", meta_path)
         return 0
 
     if args.command == "evaluate":
@@ -377,8 +383,8 @@ def main() -> int:
                 max_games=max_games,
                 engine=engine,
             ):
-                print(f"Skipped evaluation; using existing {output_path}")
-                print(f"Metadata: {meta_path}")
+                LOGGER.info("Skipped evaluation; using existing %s", output_path)
+                LOGGER.info("Metadata: %s", meta_path)
                 return 0
         engine_path = resolve_engine_path(engine, Path("tools"))
         if workers > 1:
@@ -422,8 +428,12 @@ def main() -> int:
             engine=engine,
             engine_version=result.engine_version,
         )
-        print(f"Wrote {output_path} ({result.stats.evaluated_games} games evaluated)")
-        print(f"Metadata: {meta_path}")
+        LOGGER.info(
+            "Wrote %s (%s games evaluated)",
+            output_path,
+            result.stats.evaluated_games,
+        )
+        LOGGER.info("Metadata: %s", meta_path)
         return 0
 
     if args.command == "engine":
@@ -435,9 +445,9 @@ def main() -> int:
                 raise ValueError(f"Only stockfish is supported, got {config.name}")
             result = install_stockfish(config.version, Path("tools"))
             if result.skipped:
-                print(f"Skipped download; using existing {result.path}")
+                LOGGER.info("Skipped download; using existing %s", result.path)
             else:
-                print(f"Downloaded {result.version} to {result.path}")
+                LOGGER.info("Downloaded %s to %s", result.version, result.path)
             return 0
         raise ValueError(f"Unknown engine command: {engine_command}")
 
